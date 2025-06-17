@@ -76,6 +76,62 @@ const checkVerificationCode = async (user: CustomerUser, code: string): Promise<
 	}
 }
 
+api.get('/callback', async (req, res) => {
+	const code = req.query.code
+	const error = req.query.error
+	const requestId = req.query.state as string
+	if (error) {
+		res.status(400).send(`Error: ${req.query.error_description || 'Unknown error'}`)
+		return
+	}
+	if (!code || !requestId) {
+		res.status(400).send('Bad Request: code and state are required')
+		return
+	}
+	const headers = new Headers()
+	headers.append('Content-Type', 'application/x-www-form-urlencoded')
+	headers.append('Authorization', `Bearer ${process.env.API_JWT}`)
+	headers.append('Accept', 'application/json')
+	const params = new URLSearchParams()
+	params.append('grant_type', 'authorization_code')
+	params.append('code', code as string)
+	params.append('redirect_uri', `${process.env.HOST}:${process.env.PORT}/callback`)
+	try {
+		const response = await fetch(`${process.env.API_GATEWAY_OAUTH}/oauth2/token`, {
+			method: 'POST',
+			headers,
+			body: params.toString()
+		})
+		if (!response.ok) {
+			const errorText = await response.text()
+			console.error('Token error:', response.status, errorText)
+			res.status(response.status).send(errorText)
+			return
+		}
+		const data = await response.json()
+		const { access_token } = data
+		global.accessTokens = global.accessTokens || new Map()
+		global.accessTokens.set(requestId, access_token)
+		setTimeout(() => {
+			global.accessTokens.delete(requestId)
+		}, 2 * 60 * 60 * 1000)
+		res.status(201).send(`
+			<html lang="en">
+				<body>
+					<script>
+						window.opener.postMessage({ status: 'authorized', requestId: '${requestId}' }, '*');
+						window.close();
+					</script>
+					<p>You can close this window.</p>
+				</body>
+			</html>
+		`)
+	} catch (err) {
+		console.error('Unexpected fetch error', err)
+		res.status(500).send('Internal Server Error')
+	}
+})
+
 api.post('/signup', async (req, res) => {
 	const { id: userId, password } = req.body
 	const isEmail = emailRegex.test(userId || '')
@@ -128,6 +184,48 @@ api.post('/verify', async (req, res) => {
 	user.verified = await checkVerificationCode(user, code)
 	await saveUser(user)
 	res.status(200).json({ verified: user.verified })
+})
+
+api.post('/authorize', async (req, res) => {
+	try {
+		const { phone, state } = req.body || {}
+		if (!phone) {
+			res.status(400).json({ error: "Phone number is required." })
+			return
+		}
+		const response = await fetch(`${process.env.API_GATEWAY_NETWORK_APIS}/v0.1/network-enablement`, {
+			method: 'POST',
+			headers: {
+				'Authorization': `Bearer ${process.env.API_JWT}`,
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				phone_number: phone,
+				scopes: [process.env.NV_SCOPE],
+				state,
+			})
+		})
+		if (!response.ok) {
+			const errorText = await response.text()
+			console.error('Vonage API error:', errorText)
+			res.status(response.status).json({ error: "Failed to initialize authentication flow." })
+			return
+		}
+		const data = await response.json()
+		if (!process.env.NV_SCOPE) {
+			res.status(500).json({ error: "NV_SCOPE environment variable is not set." })
+			return
+		}
+		const { auth_url } = data.scopes[process.env.NV_SCOPE]
+		res.status(200).json({ auth_url })
+	} catch (error) {
+		console.error('Unexpected error with /login:', error)
+		if (error instanceof Error) {
+			res.status(500).json({ error: error.message })
+		} else {
+			res.status(500).json({ error: 'Internal server error' })
+		}
+	}
 })
 
 api.listen(process.env.PORT, async () => {

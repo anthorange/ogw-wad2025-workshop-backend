@@ -33,6 +33,38 @@ const saveUser = async (user: CustomerUser) => {
 	global.users?.push(user)
 }
 
+const verifyNumber = async (phoneNumber: string, state: string): Promise<NumberVerificationResponse> => {
+	const accessToken = global.accessTokens?.get(state as string)
+	if (!accessToken) {
+		return {
+			verified: false,
+		} as NumberVerificationResponse
+	}
+	const result = await numberVerificationResult(accessToken, phoneNumber)
+	return {
+		verified: result,
+	} as NumberVerificationResponse
+}
+
+const numberVerificationResult = async (accessToken: string, phoneNumber: string): Promise<boolean> => {
+	try {
+		const headers = new Headers()
+		headers.append('Content-Type', 'application/json')
+		headers.append('Authorization', `Bearer ${accessToken}`)
+		const response = await fetch(`${process.env.API_GATEWAY_NETWORK_APIS}/camara/number-verification/v031/verify`, {
+			method: 'POST',
+			headers: headers,
+			body: JSON.stringify({ phoneNumber })
+		})
+		const data = await response.json()
+		const { devicePhoneNumberVerified } = data as { devicePhoneNumberVerified: boolean }
+		return devicePhoneNumberVerified ?? false
+	} catch (error) {
+		console.error('There has been a problem with your fetch operation:', error)
+		return false
+	}
+}
+
 const sendVerificationCode = async (recipient: CustomerUser, channel: "sms" | "email") => {
 	const to = recipient.id.startsWith('+') ? recipient.id.slice(1) : recipient.id
 	const headers = new Headers()
@@ -133,6 +165,7 @@ api.get('/callback', async (req, res) => {
 })
 
 api.post('/signup', async (req, res) => {
+	const state = req.query.state
 	const { id: userId, password } = req.body
 	const isEmail = emailRegex.test(userId || '')
 	if (!userId || (isEmail && !password)) {
@@ -151,11 +184,24 @@ api.post('/signup', async (req, res) => {
 		verified: false,
 		...(password ? { password } : {}),
 	}
-	global.users.push(newUser)
-	sendVerificationCode(newUser, isEmail ? "email" : "sms")
-	res.status(202).json({
-		verified: false,
-	} as NumberVerificationResponse)
+	if (isEmail) {
+		global.users.push(newUser)
+		sendVerificationCode(newUser, "email")
+		res.status(202).json({
+			verified: false,
+		} as NumberVerificationResponse)
+		return
+	}
+	const result = await verifyNumber(userId!, state as string)
+	const verificationResult = result as NumberVerificationResponse
+	if (!verificationResult.verified) {
+		sendVerificationCode(newUser, "sms")
+	}
+	saveUser({
+		...newUser,
+		verified: verificationResult.verified,
+	} as CustomerUser)
+	res.status(200).json(verificationResult)
 })
 
 api.post('/verify', async (req, res) => {

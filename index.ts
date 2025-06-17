@@ -76,6 +76,47 @@ const checkVerificationCode = async (user: CustomerUser, code: string): Promise<
 	}
 }
 
+api.get('/callback', (req, res) => {
+	const code = req.query.code
+	const error = req.query.error
+	const requestId = req.query.state as string
+	if (error) {
+		const errorDescription = req.query.error_description || 'Unknown error'
+		if (errorDescription === 'Unknown user') {
+			res.status(404).send('User not found as an operator subscriber')
+			return
+		}
+		res.status(400).send(`Error: ${errorDescription}`)
+		return
+	}
+	if (!code || !requestId) {
+		res.status(400).send('Bad Request: code and state, containing requestId, are required')
+		return
+	}
+	const headers = new Headers()
+	headers.append('Content-Type', 'application/x-www-form-urlencoded')
+	headers.append('Authorization', `Basic ${btoa(process.env.API_KEY + ':' + process.env.API_SECRET)}`)
+	const urlencoded = new URLSearchParams()
+	urlencoded.append('grant_type', 'authorization_code')
+	urlencoded.append('code', code as string)
+	urlencoded.append('redirect_uri', `${process.env.HOST}:${process.env.PORT}/callback`)
+	fetch(`${process.env.API_GATEWAY}/token`, {
+		method: 'POST',
+		headers: headers,
+		body: urlencoded,
+	})
+		.then(response => response.json())
+		.then(async data => {
+			const { access_token } = data as { access_token: string }
+			global.accessTokens = global.accessTokens || new Map()
+			global.accessTokens.set(requestId, access_token)
+			setTimeout(() => {
+				global.accessTokens.delete(requestId)
+			}, 2 * 60 * 60 * 1000)
+			res.status(201).send()
+		})
+})
+
 api.post('/signup', async (req, res) => {
 	const { id: userId, password } = req.body
 	const isEmail = emailRegex.test(userId || '')

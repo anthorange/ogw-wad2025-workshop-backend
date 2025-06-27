@@ -4,6 +4,7 @@ import cors from 'cors'
 
 const phoneRegex = /^\+\d{2}[0-9]{1,13}$/
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const fraudScope = "dpv:FraudPreventionAndDetection#number-verification-verify-read"
 
 interface CustomerUser {
 	id: string
@@ -34,6 +35,7 @@ const saveUser = async (user: CustomerUser) => {
 }
 
 const verifyNumber = async (phoneNumber: string, state: string): Promise<NumberVerificationResponse> => {
+
 	const accessToken = global.accessTokens?.get(state as string)
 	if (!accessToken) {
 		return {
@@ -51,7 +53,7 @@ const numberVerificationResult = async (accessToken: string, phoneNumber: string
 		const headers = new Headers()
 		headers.append('Content-Type', 'application/json')
 		headers.append('Authorization', `Bearer ${accessToken}`)
-		const response = await fetch(`${process.env.API_GATEWAY}/number-verification/v0/verify`, {
+		const response = await fetch(`https://api-eu.vonage.com/camara/number-verification/v031/verify`, {
 			method: 'POST',
 			headers: headers,
 			body: JSON.stringify({ phoneNumber })
@@ -108,45 +110,66 @@ const checkVerificationCode = async (user: CustomerUser, code: string): Promise<
 	}
 }
 
-api.get('/callback', (req, res) => {
+api.get('/callback', async (req, res) => {
 	const code = req.query.code
 	const error = req.query.error
 	const requestId = req.query.state as string
+
 	if (error) {
-		const errorDescription = req.query.error_description || 'Unknown error'
-		if (errorDescription === 'Unknown user') {
-			res.status(404).send('User not found as an operator subscriber')
-			return
-		}
-		res.status(400).send(`Error: ${errorDescription}`)
-		return
+		return res.status(400).send(`Error: ${req.query.error_description || 'Unknown error'}`)
 	}
+
 	if (!code || !requestId) {
-		res.status(400).send('Bad Request: code and state, containing requestId, are required')
-		return
+		return res.status(400).send('Bad Request: code and state are required')
 	}
+
 	const headers = new Headers()
 	headers.append('Content-Type', 'application/x-www-form-urlencoded')
-	headers.append('Authorization', `Basic ${btoa(process.env.API_KEY + ':' + process.env.API_SECRET)}`)
-	const urlencoded = new URLSearchParams()
-	urlencoded.append('grant_type', 'authorization_code')
-	urlencoded.append('code', code as string)
-	urlencoded.append('redirect_uri', `${process.env.HOST}:${process.env.PORT}/callback`)
-	fetch(`${process.env.API_GATEWAY}/token`, {
-		method: 'POST',
-		headers: headers,
-		body: urlencoded,
-	})
-		.then(response => response.json())
-		.then(async data => {
-			const { access_token } = data as { access_token: string }
-			global.accessTokens = global.accessTokens || new Map()
-			global.accessTokens.set(requestId, access_token)
-			setTimeout(() => {
-				global.accessTokens.delete(requestId)
-			}, 2 * 60 * 60 * 1000)
-			res.status(201).send()
+	headers.append('Authorization', `Bearer ${process.env.JWT}`)
+	headers.append('Accept', 'application/json')
+
+	const params = new URLSearchParams()
+	params.append('grant_type', 'authorization_code')
+	params.append('code', code as string)
+	params.append('redirect_uri', `${process.env.HOST}:${process.env.PORT}/callback`)
+
+	try {
+		const response = await fetch('https://api-eu-3.vonage.com/oauth2/token', {
+			method: 'POST',
+			headers,
+			body: params.toString()
 		})
+
+		if (!response.ok) {
+			const errorText = await response.text()
+			console.error('Token error:', response.status, errorText)
+			return res.status(response.status).send(errorText)
+		}
+
+		const data = await response.json()
+		const { access_token } = data
+
+		global.accessTokens = global.accessTokens || new Map()
+		global.accessTokens.set(requestId, access_token)
+		setTimeout(() => {
+			global.accessTokens.delete(requestId)
+		}, 2 * 60 * 60 * 1000)
+
+		res.status(201).send(`
+			<html lang="en">
+				<body>
+					<script>
+						window.opener.postMessage({ status: 'authorized', requestId: '${requestId}' }, '*');
+						window.close();
+					</script>
+					<p>You can close this window.</p>
+				</body>
+			</html>
+		`)
+	} catch (err) {
+		console.error('Unexpected fetch error', err)
+		res.status(500).send('Internal Server Error')
+	}
 })
 
 api.post('/signup', async (req, res) => {
@@ -215,6 +238,47 @@ api.post('/verify', async (req, res) => {
 	user.verified = await checkVerificationCode(user, code)
 	await saveUser(user)
 	res.status(200).json({ verified: user.verified })
+})
+
+api.post('/login', async (req, res) => {
+	try {
+		const { phone, state } = req.body || {}
+
+		if (!phone) {
+			return res.status(400).json({ error: "Phone number is required." })
+		}
+
+		const response = await fetch(`https://api-eu.vonage.com/v0.1/network-enablement`, {
+			method: 'POST',
+			headers: {
+				'Authorization': `Bearer ${process.env.JWT}`,
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				phone_number: phone,
+				scopes: [fraudScope],
+				state,
+			})
+		})
+
+		if (!response.ok) {
+			const errorText = await response.text()
+			console.error('Vonage API error:', errorText)
+			return res.status(response.status).json({ error: "Failed to initialize authentication flow." })
+		}
+
+		const data = await response.json()
+		const { auth_url } = data.scopes[fraudScope]
+
+		res.status(200).json({ auth_url })
+	} catch (error) {
+		console.error('Unexpected error with /login:', error)
+		if (error instanceof Error) {
+			res.status(500).json({ error: error.message })
+		} else {
+			res.status(500).json({ error: 'Internal server error' })
+		}
+	}
 })
 
 api.listen(process.env.PORT, async () => {

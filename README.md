@@ -12,13 +12,10 @@
 1. Copy the example environment file (if provided) or create a new `.env` file in the project root.
 2. Add the required environment variables. Example:
 
-    ```
-	HOST=http://localhost
-    PORT=3000
-	API_GATEWAY=<URL to the Vonage API Gateway>
-	API_KEY=<yours from the Vonage API Dashboard>
-	API_SECRET=<yours from the Vonage API Dashboard>
-    ```
+BACKEND_URL=http://localhost:3000
+API_GATEWAY=https://api.nexmo.com
+API_KEY=<yours from the Vonage API Dashboard>
+API_SECRET=<yours from the Vonage API Dashboard>
 
 3. Save the `.env` file.
 
@@ -36,7 +33,7 @@
     npm run dev
     ```
 
-3. The Express server should now be running at `http://localhost:<PORT>` (default port is 3000 unless overridden in `.env`).
+3. The Express server should now be running at `http://localhost:<PORT>` (default port is 3000 unless overridden in `.env` as PORT of BACKEND_URL if this matches the format <HOST>:<PORT>).
 
 ## License
 

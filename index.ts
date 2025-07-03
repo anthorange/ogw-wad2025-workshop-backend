@@ -18,16 +18,40 @@ interface NumberVerificationResponse {
 	verified: boolean
 }
 
+class InMemoryStore {
+	static users: CustomerUser[] = []
+	static accessTokens: Map<string, string> = new Map()
+}
+
 declare global {
 	var users: CustomerUser[]
 	var accessTokens: Map<string, string>
 }
+
+Object.defineProperty(global, 'users', {
+	get() { return InMemoryStore.users },
+	set(val) { InMemoryStore.users = val }
+})
+
+Object.defineProperty(global, 'accessTokens', {
+	get() { return InMemoryStore.accessTokens },
+	set(val) { InMemoryStore.accessTokens = val }
+})
 
 dotenv.config()
 
 const api = express()
 api.use(express.json())
 api.use(cors())
+
+let port: number
+const backendUrl = process.env.BACKEND_URL || ''
+const portMatch = backendUrl.match(/:(\d+)(?:\/)?$/)
+if (portMatch) {
+	port = parseInt(portMatch[1], 10)
+} else {
+	port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000
+}
 
 const saveUser = async (user: CustomerUser) => {
 	global.users?.push(user)

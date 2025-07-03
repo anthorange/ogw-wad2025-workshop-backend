@@ -13,8 +13,7 @@
 2. Add the required environment variables. Example:
 
 ```
-HOST=http://localhost
-PORT=3000
+BACKEND_URL=http://localhost:3000
 API_GATEWAY=https://api.nexmo.com
 API_GATEWAY_OAUTH=https://api-eu-3.vonage.com
 API_GATEWAY_NETWORK_APIS=https://api-eu.vonage.com
@@ -43,7 +42,7 @@ NV_SCOPE="dpv:FraudPreventionAndDetection#number-verification-verify-read"
     npm run dev
     ```
 
-3. The Express server should now be running at `http://localhost:<PORT>` (default port is 3000 unless overridden in `.env`).
+3. The Express server should now be running at `http://localhost:<PORT>` (default port is 3000 unless overridden in `.env` as PORT of BACKEND_URL if this matches the format <HOST>:<PORT>).
 
 ## License
 

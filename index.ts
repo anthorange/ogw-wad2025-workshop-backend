@@ -18,16 +18,40 @@ interface NumberVerificationResponse {
 	verified: boolean
 }
 
+class InMemoryStore {
+	static users: CustomerUser[] = []
+	static accessTokens: Map<string, string> = new Map()
+}
+
 declare global {
 	var users: CustomerUser[]
 	var accessTokens: Map<string, string>
 }
+
+Object.defineProperty(global, 'users', {
+	get() { return InMemoryStore.users },
+	set(val) { InMemoryStore.users = val }
+})
+
+Object.defineProperty(global, 'accessTokens', {
+	get() { return InMemoryStore.accessTokens },
+	set(val) { InMemoryStore.accessTokens = val }
+})
 
 dotenv.config()
 
 const api = express()
 api.use(express.json())
 api.use(cors())
+
+let port: number
+const backendUrl = process.env.BACKEND_URL || ''
+const portMatch = backendUrl.match(/:(\d+)(?:\/)?$/)
+if (portMatch) {
+	port = parseInt(portMatch[1], 10)
+} else {
+	port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000
+}
 
 const saveUser = async (user: CustomerUser) => {
 	global.users?.push(user)
@@ -95,7 +119,7 @@ api.get('/callback', async (req, res) => {
 	const params = new URLSearchParams()
 	params.append('grant_type', 'authorization_code')
 	params.append('code', code as string)
-	params.append('redirect_uri', `${process.env.HOST}:${process.env.PORT}/callback`)
+	params.append('redirect_uri', `${process.env.BACKEND_URL}/callback`)
 	try {
 		const response = await fetch(`${process.env.API_GATEWAY_OAUTH}/oauth2/token`, {
 			method: 'POST',
@@ -228,6 +252,6 @@ api.post('/authorize', async (req, res) => {
 	}
 })
 
-api.listen(process.env.PORT, async () => {
-	console.log(`Server is running on ${process.env.HOST}:${process.env.PORT}`)
+api.listen(port, async () => {
+	console.log(`Server is running on ${process.env.BACKEND_URL}`)
 })

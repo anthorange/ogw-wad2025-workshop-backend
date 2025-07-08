@@ -57,6 +57,8 @@ const saveUser = async (user: CustomerUser) => {
 	global.users?.push(user)
 }
 
+
+
 const sendVerificationCode = async (recipient: CustomerUser, channel: "sms" | "email") => {
 	const to = recipient.id.startsWith('+') ? recipient.id.slice(1) : recipient.id
 	const headers = new Headers()
@@ -100,6 +102,10 @@ const checkVerificationCode = async (user: CustomerUser, code: string): Promise<
 	}
 }
 
+//TODO: do the authorize with network-enabled
+
+//TODO api.get callback get the access token
+
 api.post('/signup', async (req, res) => {
 	const { id: userId, password } = req.body
 	const isEmail = emailRegex.test(userId || '')
@@ -119,12 +125,20 @@ api.post('/signup', async (req, res) => {
 		verified: false,
 		...(password ? { password } : {}),
 	}
+	
+	//TODO: integrate number verify and keep email as fallback
 	global.users.push(newUser)
 	sendVerificationCode(newUser, isEmail ? "email" : "sms")
 	res.status(202).json({
 		verified: false,
 	} as NumberVerificationResponse)
+
+
 })
+
+//TODO: call API number-verification /camara/number-verification/v031/verify
+
+
 
 api.post('/verify', async (req, res) => {
 	const { id: userId, code } = req.body

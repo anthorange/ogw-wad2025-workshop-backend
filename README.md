@@ -12,10 +12,19 @@
 1. Copy the example environment file (if provided) or create a new `.env` file in the project root.
 2. Add the required environment variables. Example:
 
+```
 BACKEND_URL=http://localhost:3000
 API_GATEWAY=https://api.nexmo.com
+API_GATEWAY_OAUTH=https://api-eu-3.vonage.com
+API_GATEWAY_NETWORK_APIS=https://api-eu.vonage.com
 API_KEY=<yours from the Vonage API Dashboard>
 API_SECRET=<yours from the Vonage API Dashboard>
+API_JWT=<your JWT token>
+NV_SCOPE="dpv:FraudPreventionAndDetection#number-verification-verify-read"
+```
+
+- You can generate a pair of public and private keys for your application on the Vonage dashboard, and then use Vonage's [JWT Generator](https://developer.vonage.com/en/jwt) to create a JWT token.
+- The Number Verification API requires the `dpv:FraudPreventionAndDetection#number-verification-verify-read` scope to be set in the `VITE_NV_SCOPE` variable, following the [CAMARA](https://github.com/camaraproject) standard scope.
 
 3. Save the `.env` file.
 

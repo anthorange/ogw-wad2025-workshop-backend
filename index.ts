@@ -168,6 +168,6 @@ api.post('/verify', async (req, res) => {
 	res.status(200).json({ verified: user.verified })
 })
 
-api.listen(process.env.PORT, async () => {
-	console.log(`Server is running on ${process.env.HOST}:${process.env.PORT}`)
+api.listen(port, async () => {
+	console.log(`Server is running on ${process.env.BACKEND_URL}`)
 })
